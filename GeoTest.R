@@ -6,12 +6,38 @@
 # 下载GSE数据
 # https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE84402
 
+# 下载依赖包 
+# curl包  https://github.com/jeroen/curl   https://cran.r-project.org/web/packages/curl/index.html
+# sudo apt-get install -y libcurl-dev
+# install.packages("curl") 
+
+# openssl包 https://github.com/jeroen/openssl   https://cran.r-project.org/web/packages/openssl/index.html
+# sudo apt-get install -y libssl-dev
+# install.packages("openssl")
+
+# xml2包  https://github.com/r-lib/xml2   https://cran.r-project.org/web/packages/xml2/index.html 
+# sudo apt-get install -y libxml2-dev
+# install.packages("xml2") 
+# or
+# install.packages("devtools")
+# devtools::install_github("r-lib/xml2")
+
+# httr包  https://github.com/r-lib/httr  https://cran.r-project.org/web/packages/httr/index.html
+# install.packages("httr")
+# or
+# install.packages("devtools")
+# devtools::install_github("r-lib/httr")
+
+install.packages("nlme")
+install.packages("spatial")
+
+
 #### 通过GEOquery下载GSE数据
 # 通过BiocManager安装GEOquery包
 if (!requireNamespace("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
 
-BiocManager::install("GEOquery")
+BiocManager::install("GEOquery") 
 
 # 加载依赖包
 install.packages('R.utils')
