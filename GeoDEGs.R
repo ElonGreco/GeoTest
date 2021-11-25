@@ -70,6 +70,7 @@ exp <- exprs(eSet[[1]])
  
 
 
+# 归一化和标准化的区别
 # 归一化：将每个样本的特征值（在转录组中，特征值就是表达量）转换到同一量纲下，
 # 把表达量映射到特定的区间内，区间的上下限由表达量的极值决定，这种区间缩放法是归一化的常用方法。
 # 标准化：按照表达矩阵中的一个基因在不同样本中的表达量处理数据，
@@ -103,7 +104,8 @@ qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
 LogC <- (qx[5] > 100) ||
   (qx[6]-qx[1] > 50 && qx[2] > 0)
 if (LogC) { ex[which(ex <= 0)] <- NaN
-exp <- log2(ex) }
+exp <- log2(ex)
+print("log2 transform finished")}else{print("log2 transform not needed")}
 
 
 #------------------------------#
@@ -176,6 +178,9 @@ dim(exp)
 # match()函数返回的是一个位置向量，该向量记录着第一个参数中每个元素在第二个参数中的位置。所以，此时ids里的探针顺序与表达矩阵exp的探针顺序一一对应：
 ids <- ids[match(rownames(exp),ids$probe_id),]
 
+ids[1:6,1:2]
+exp[1:6,1:2]
+
 
 # ids里的探针顺序与表达矩阵exp的探针顺序一一对应后，再通过probe_id将表达矩阵exp进行分组，
 # 将同一个symbol所对应的多个探针分成不同的组，并对每组探针进行统计：计算每组中每行探针表达量的平均值（也就是每个探针在6个样本中表达量的均值rowMeans(x)），
@@ -210,9 +215,13 @@ probes = as.character(tmp)
 dim(exp)
 exp = exp[rownames(exp) %in% probes,] # 过滤有多个探针的基因
 
+head(tmp)
+head(probes)
+
+
 dim(exp)
 
-# 这时，探针ID和基因symbol就一一对应了，将表达矩阵探针ID(即exp表达矩阵的行名rownames(exp))换为基因symbol:
+# 这时，探针ID和基因symbol就一一对应了，将表达矩阵探针ID(即exp表达矩阵的行名rownames(exp)换为基因symbol:
 rownames(exp) <- ids[match(rownames(exp),ids$probe_id),2]
 
 #-------
@@ -274,6 +283,7 @@ group_list
 # 此时表达矩阵exp_1的行名已经由探针ID转换成基因名了，所以我们使用exp_l['GAPDH',]来提取该基因在所有样品中的表达量。
 
 exp['GAPDH',]
+exp['ACTB',]
 # 我们可以看到我们数据中两个管家基因的表达量都偏高，符合预期。为什么知道它偏高呢？
 # 画一个整体样本所有基因的表达量的boxplot：boxplot(exp)
 boxplot(exp)
@@ -293,7 +303,31 @@ boxplot(exp)
 
 
 
+
 # 3.2   看表达矩阵的分布图—画图看各个样本的表达量
+
+# 
+# BiocManager::install("DESeq2")
+# library(DESeq2)
+# dds <- DESeqDataSetFromMatrix(countData = exp,
+#                               colData = isd,
+#                               design = ~ type+condition)
+# dds <- DESeq(dds)
+# resultsNames(dds)
+# res <- results(dds, name="condition_untreated_vs_treated")
+# summary(res)
+# 
+# 
+
+
+
+
+
+
+
+
+
+
 # 使用ggplot2画各个样本表达量的boxplot图
 
 # 准备画图所需数据exp_L
@@ -333,6 +367,10 @@ group_list = ifelse(str_detect(pd$title,"cancertissue")==TRUE,"cancertissue","no
 group_list
 exp_L$group = rep(group_list,each=nrow(exp))
 head(exp_L)
+
+# table(exp_L[,2])
+# dim(exp_L)
+# 20859 * 28
 
 # ggplot2画图 
 library(ggplot2)
@@ -500,6 +538,7 @@ colnames(nrDEG)
 plot(nrDEG$logFC,-log10(nrDEG$P.Value))
 
 DEG=nrDEG
+
 logFC_cutoff <- with(DEG,mean(abs( logFC)) + 2*sd(abs( logFC)) )
 DEG$change = as.factor(ifelse(DEG$P.Value < 0.05 & abs(DEG$logFC) > logFC_cutoff,
                               ifelse(DEG$logFC > logFC_cutoff ,'UP','DOWN'),'NOT')
@@ -527,9 +566,218 @@ print(g)
 tmp<-(which(row.names(DEG)=="PEG10"))
 PEG10 <- DEG[tmp,]
 PEG10
+load(file = "DEGinput.Rdata")
+load(file = "step2output.Rdata")
+boxplot(exp)
+
+which(row.names(nrDEG)=="PEG10")
+
+which(row.names(nrDEG)=="PEG10")
+
+nrDEG[which(row.names(nrDEG)=="PEG10"),]
+
+nrDEG["PEG10",]
 
 
 
 
 
 
+
+#富集分析
+
+#富集分析准备工作：
+
+##首先对差异表达矩阵nrDEG，进行加工
+###1.把行名变成SYMBOL列
+rm(list = ls())  ## 魔幻操作，一键清空~
+options(stringsAsFactors = F)
+load(file = "DEGoutput.Rdata")
+library(dplyr)
+deg = nrDEG
+deg <- mutate(deg,symbol = rownames(deg))
+head(deg)
+
+###2.加change列：上调或下调，火山图要用
+
+logFC_t = 1 #不同的阈值，筛选到的差异基因数量就不一样，后面的超几何分布检验结果就大相径庭。
+change=ifelse(deg$P.Value>0.01,'stable', 
+              ifelse( deg$logFC >logFC_t,'up', 
+                      ifelse( deg$logFC < -logFC_t,'down','stable') )
+)
+deg <- mutate(deg,change)
+head(deg)
+table(deg$change)
+
+###3.加ENTREZID列，后面富集分析要用
+library(ggplot2)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+s2e <- bitr(unique(deg$symbol), fromType = "SYMBOL",  #ID转换核心函数bitr
+            toType = c( "ENTREZID"),
+            OrgDb = org.Hs.eg.db)
+head(s2e)
+head(deg)
+deg <- inner_join(deg,s2e,by=c("symbol"="SYMBOL"))
+
+head(deg)
+
+save(exp,group_list,deg,file = "enrich_input.Rdata")
+
+#####################
+######富集分析#######
+#####################
+
+rm(list = ls()) 
+options(stringsAsFactors = F)
+load(file = 'enrich_input.Rdata')
+
+## 1.KEGG pathway analysis
+#上调、下调、差异、所有基因
+
+#clusterProfiler作kegg富集分析：
+library(clusterProfiler)
+gene_up= deg[deg$change == 'up','ENTREZID'] 
+gene_down=deg[deg$change == 'down','ENTREZID'] 
+gene_diff=c(gene_up,gene_down)
+gene_all = deg[,'ENTREZID']
+kk.up <- enrichKEGG(gene         = gene_up,
+                    organism     = 'hsa',
+                    universe     = gene_all,
+                    pvalueCutoff = 0.9,
+                    qvalueCutoff =0.9)
+head(kk.up)[,1:6]
+dim(kk.up)
+kk.down <- enrichKEGG(gene         =  gene_down,
+                      organism     = 'hsa',
+                      universe     = gene_all,
+                      pvalueCutoff = 0.9,
+                      qvalueCutoff =0.9)
+head(kk.down)[,1:6]
+dim(kk.down)
+kk.diff <- enrichKEGG(gene         = gene_diff,
+                      organism     = 'hsa',
+                      pvalueCutoff = 0.05)
+head(kk.diff)[,1:6]
+
+class(kk.diff)
+#提取出数据框
+kegg_diff_dt <- kk.diff@result
+
+#根据pvalue来选,用于可视化
+down_kegg <- kk.down@result %>%
+  filter(pvalue<0.05) %>%
+  mutate(group=-1)
+
+up_kegg <- kk.up@result %>%
+  filter(pvalue<0.05) %>%
+  mutate(group=1)
+
+#可视化
+kegg_plot <- function(up_kegg,down_kegg){
+  dat=rbind(up_kegg,down_kegg)
+  colnames(dat)
+  dat$pvalue = -log10(dat$pvalue)
+  dat$pvalue=dat$pvalue*dat$group 
+  
+  dat=dat[order(dat$pvalue,decreasing = F),]
+  
+  g_kegg<- ggplot(dat, aes(x=reorder(Description,order(pvalue, decreasing = F)), y=pvalue, fill=group)) + 
+    geom_bar(stat="identity") + 
+    scale_fill_gradient(low="blue",high="red",guide = FALSE) + 
+    scale_x_discrete(name ="Pathway names") +
+    scale_y_continuous(name ="log10P-value") +
+    coord_flip() + theme_bw()+theme(plot.title = element_text(hjust = 0.5))+
+    ggtitle("Pathway Enrichment") 
+}
+
+g_kegg <- kegg_plot(up_kegg,down_kegg)
+g_kegg
+
+ggsave(g_kegg,filename = 'kegg_up_down.png')
+
+
+#gsea作kegg富集分析：
+
+data(geneList, package="DOSE")
+head(geneList)
+length(geneList)
+names(geneList)
+boxplot(geneList)
+boxplot(deg$logFC)
+
+geneList=deg$logFC
+names(geneList)=deg$ENTREZID
+geneList=sort(geneList,decreasing = T)
+
+kk_gse <- gseKEGG(geneList     = geneList,
+                  organism     = 'hsa',
+                  nPerm        = 1000,
+                  minGSSize    = 120,
+                  pvalueCutoff = 0.9,
+                  verbose      = FALSE)
+head(kk_gse)[,1:6]
+gseaplot(kk_gse, geneSetID = rownames(kk_gse[1,]))
+
+down_kegg<-kk_gse[kk_gse$pvalue<0.05 & kk_gse$enrichmentScore < 0,];down_kegg$group=-1
+up_kegg<-kk_gse[kk_gse$pvalue<0.05 & kk_gse$enrichmentScore > 0,];up_kegg$group=1
+
+gse_kegg=kegg_plot(up_kegg,down_kegg)
+print(gse_kegg)
+ggsave(gse_kegg,filename ='kegg_up_down_gsea.png')
+
+
+### 2.GO database analysis 
+
+#go富集分析
+library(clusterProfiler)
+#输入数据
+gene_up= deg[deg$change == 'up','ENTREZID'] 
+gene_down=deg[deg$change == 'down','ENTREZID'] 
+gene_diff=c(gene_up,gene_down)
+head(deg)
+
+#**GO分析三大块**
+#细胞组分
+ego_CC <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Hs.eg.db,
+                   ont = "CC",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+#生物过程
+ego_BP <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Hs.eg.db,
+                   ont = "BP",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+#分子功能：
+ego_MF <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Hs.eg.db,
+                   ont = "MF",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+save(ego_CC,ego_BP,ego_MF,file = "ego_GPL6244.Rdata")
+rm(list = ls()) 
+load(file = "ego_GPL6244.Rdata")
+
+#第一种，条带图，按p从小到大排的
+barplot(ego_CC, showCategory=10,title="EnrichmentGO_CC")
+barplot(ego_BP, showCategory=10,title="EnrichmentGO_BP")
+barplot(ego_MF, showCategory=10,title="EnrichmentGO_MF")
+#如果运行了没出图，就dev.new()
+#第二种，点图，按富集数从大到小的
+dotplot(ego_CC,title="EnrichmentGO_BP_dot")
+
+#保存
+pdf(file = "dotplot_GPL6244.pdf")
+dotplot(ego_CC,title="EnrichmentGO_BP_dot")
+dev.off()
